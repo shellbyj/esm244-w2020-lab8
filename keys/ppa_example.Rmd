@@ -112,14 +112,14 @@ is computed."
 
 ### Density
 ```{r}
-grouse_density <- density(grouse_full, sigma = 0.02)
+grouse_density <- density(grouse_full, sigma = 0.1)
 plot(grouse_density)
 
 ```
 
 ### Nearest neighbor analysis (G-Function):
 ```{r}
-# r <- seq(0,0.000001, by = 0.0000005)
+#r <- seq(0,0.000001, by = 0.0000005)
 
 # gfunction <- envelope(grouse_full, fun = Gest, r = r, nsim = 100, nrank = 2) # Sig level of Monte Carlo = 0.04
 

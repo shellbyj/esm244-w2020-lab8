@@ -1,0 +1,228 @@
+---
+title: "SJohnson_Lab8 : Text Mining!"
+author: "Shellby Johnson"
+date: "February 27, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE)
+```
+
+
+```{r}
+library(tidyverse)
+library(here)
+
+#Text mining stuff
+library(pdftools)
+library(tidytext)
+library(textdata)
+library(ggwordcloud)
+
+```
+
+### Read in report
+
+```{r}
+ipcc_path <- here("data", "ipcc_gw_15.pdf")
+ipcc_text <- pdf_text(ipcc_path) # every single page gets its own line when you read in with "pdf_text", each individual line is a separate page in the document
+
+ipcc_p9 <- ipcc_text[9]
+
+ipcc_p9 # all text that shows up on pg.9 of that document
+
+
+```
+
+###Get this into DF shape and do some wrangling:
+
+-split pages into sepaarte lines (using '\n' or '\r\n') using 'stringr;;str_split()
+Unnest into regular columns using `tidyr::unnest()`
+- Remove leading/trailing white space with `stringr::str_trim()`
+
+```{r}
+
+ipcc_df <- data.frame(ipcc_text) %>% 
+  mutate(text_full = str_split(ipcc_text, pattern = "\r\n")) %>% 
+  unnest(text_full) %>% 
+  mutate(text_full = str_trim(text_full))
+
+#so far each line is its own row and removed white spaces
+
+```
+
+###Get tokens using `unnest_tokens`
+
+```{r}
+ipcc_tokens <- ipcc_df %>% 
+  unnest_tokens(word, text_full)
+
+```
+
+
+###Count all the words!
+
+```{r}
+
+ipcc_wc <- ipcc_tokens %>% 
+  count(word) %>% 
+  arrange(-n)
+  
+
+```
+
+### Remove the stop words
+
+```{r}
+
+ipcc_stop <- ipcc_tokens %>% 
+  anti_join(stop_words) %>% #remove anything that doesn't match with the words in this "stop_words" file
+  dplyr::select(-ipcc_text)
+
+```
+
+
+###Remove all numeric pieces
+
+```{r}
+
+ipcc_no_numeric <-  ipcc_stop %>% 
+  dplyr::filter(is.na(as.numeric(word)))
+
+#for every entry that exists in the word column, try to convert it to a number and if its actually a number then itll work, but if its a word it'll return 'NA'
+#gonna ask if its 'NA' and if its yes, then I'll keep that observation which will keep only words
+  
+```
+
+###Start doing some visualization
+
+Word Cloud:
+```{r}
+ipcc_top100 <- ipcc_no_numeric %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  head(100)
+
+ipcc_cloud <- ggplot(data = ipcc_top100, aes(label = word))+
+  geom_text_wordcloud()+
+  theme_minimal()
+
+ipcc_cloud
+
+ggplot(data = ipcc_top100, aes(label = word, size = n))+
+  geom_text_wordcloud_area(aes(color = n), shape = "diamond") +
+  scale_size_area(max_size = 12) +
+    scale_color_gradientn(colors = c("darkgreen", "blue", "purple")) +
+    theme_minimal()
+
+```
+
+```{r}
+
+get_sentiments(lexicon = "afinn")
+                            
+# Note: may be prompted to download (yes)
+
+# Let's look at the pretty positive words:
+afinn_pos <- get_sentiments("afinn") %>% 
+  filter(value %in% c(3,4,5))
+
+# Do not look at negative words in class. 
+afinn_pos
+
+get_sentiments(lexicon = "bing")
+get_sentiments(lexicon = "nrc")
+
+```
+
+###Bind together words
+
+```{r}
+
+iipcc_afinn <- ipcc_stop %>% 
+  inner_join(get_sentiments(lexicon = "afinn"))
+
+```
+
+###Find counts of value rankings:
+
+```{r}
+ipcc_afinn_hist <- iipcc_afinn %>% 
+  count(value)
+
+ggplot(data = ipcc_afinn_hist, aes(x = value, y = n))+
+  geom_col()
+```
+
+
+```{r}
+#words that have scores of +2?
+
+ipcc_afinn2 <- iipcc_afinn %>% 
+  filter(value == 2)
+
+```
+
+```{r}
+ipcc_summary <- iipcc_afinn %>% 
+  summarize(
+    mean_score = mean(value), 
+    median_score = median(value)
+                      
+  )
+
+```
+
+### Check out sentiments by NRC
+
+```{r}
+ipcc_nrc <- ipcc_stop %>% 
+  inner_join(get_sentiments(lexicon = "nrc"))
+
+# See what's excluded
+
+ipcc_exclude <- ipcc_stop %>% 
+  anti_join(get_sentiments(lexicon = "nrc"))
+
+```
+
+
+### Find counts by sentiment
+
+```{r}
+
+ipcc_nrc_n <- ipcc_nrc %>% 
+  count(sentiment, sort = TRUE) %>% 
+  mutate(sentiment = as.factor(sentiment)) %>% 
+  mutate(sentiment = fct_reorder(sentiment, -n))
+#changed the sentiments column to be a factor, but the default factor organization is also alphabetical, so then we re-ordered so that ggplot plots keeping the original order in our dataframe
+
+ggplot(data = ipcc_nrc_n) +
+  geom_col(aes(x = sentiment, y = n)) #ggplot changes the order to be alphabetical by default, which we don't want, want to keep the original order
+```
+
+For each sentiment bin, what are the top 5 most frequent words associated with taht bin?
+
+```{r}
+ipcc_nrc_n5 <- ipcc_nrc %>%
+  count(word, sentiment, sort = TRUE) %>% 
+  group_by(sentiment) %>% 
+  top_n(5) %>% 
+  ungroup()
+
+ipcc_nrc_gg <- ggplot(data = ipcc_nrc_n5, 
+                      aes(x = reorder(word, n),y = n),
+                      fill = sentiment)+
+  geom_col(show.legend = FALSE, aes(fill = sentiment)) +
+  facet_wrap(~sentiment, ncol = 2, scales = "free")+
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Word", y = "count")
+
+ipcc_nrc_gg
+
+```
+
